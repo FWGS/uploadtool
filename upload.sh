@@ -330,8 +330,10 @@ if [ ! -z "$GITEA_SERVER_URL" ] && [ ! -z "$GITEA_SERVER_TOKEN" ]; then
       echo "Delete the tag..."
       scheme=$(echo $GITEA_SERVER_URL | cut -d / -f 1)
       server_url=$(echo $GITEA_SERVER_URL | cut -d / -f 3)
+      git config --global http.sslVerify false
       git remote add origin2 "$scheme//FWGS-deployer:$GITEA_SERVER_TOKEN@$server_url/$GITEA_REPO_SLUG"
       git push origin2 --delete $RELEASE_NAME
+      git config --global http.sslVerify true
     fi
     
     echo "Create release..."
@@ -350,7 +352,7 @@ if [ ! -z "$GITEA_SERVER_URL" ] && [ ! -z "$GITEA_SERVER_TOKEN" ]; then
       BODY="$UPLOADTOOL_BODY"
     fi
 
-    release_infos=$(curl -H "Authorization: token $GITEA_SERVER_TOKEN" -XPOST \
+    release_infos=$(curl -H "Authorization: token $GITEA_SERVER_TOKEN" -H "Content-Type: application/json" \
          --data '{"tag_name": "'"$RELEASE_NAME"'","target_commitish": "'"$TRAVIS_COMMIT"'","name": "'"$RELEASE_TITLE"'","body": "'"$BODY"'","draft": false,"prerelease": '$is_prerelease'}' "$GITEA_SERVER_URL/api/v1/repos/$GITEA_REPO_SLUG/releases")
 
     echo "$release_infos"
