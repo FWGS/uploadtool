@@ -146,7 +146,13 @@ if [ ! -z "$TRAVIS_REPO_SLUG" ] ; then
   if [ -z "$GITHUB_TOKEN" ] ; then
     echo "\$GITHUB_TOKEN missing, please set it in the Travis CI settings of this project"
     echo "You can get one from https://github.com/settings/tokens"
-    exit 1
+  fi
+  if [ -z "$GITEA_SERVER_URL" ]; then
+    echo "\$GITEA_SERVER_URL is missing, please set it in the Travis CI settings of this project"
+  else
+    if [ -z "$GITEA_SERVER_TOKEN" ]; then
+      echo "\$GITEA_SERVER_TOKEN is missing, please set it in the Travis CI settings of this project"
+    fi
   fi
 else
   # We are not running on Travis CI
@@ -157,105 +163,222 @@ else
   if [ -z "$GITHUB_TOKEN" ] ; then
     read -r -s -p "Token (https://github.com/settings/tokens): " GITHUB_TOKEN
   fi
+  if [ -z "$GITEA_SERVER_URL" ]; then
+    read -r -p "Gitea Server URL: " GITEA_SERVER_URL
+  fi
+  if [ -z "$GITEA_SERVER_TOKEN" ]; then
+    read -r -s -p "Gitea Token: " GITEA_SERVER_TOKEN
+  fi
+  if [ -z "$GITEA_REPO_SLUG" ]; then
+    read -r -p "Gitea Repo Slug (leave empty to use same as GitHub)" GITEA_REPO_SLUG
+  fi
 fi
 
-tag_url="https://api.github.com/repos/$REPO_SLUG/git/refs/tags/$RELEASE_NAME"
-tag_infos=$(curl -XGET --header "Authorization: token ${GITHUB_TOKEN}" "${tag_url}")
-echo "tag_infos: $tag_infos"
-tag_sha=$(echo "$tag_infos" | grep '"sha":' | head -n 1 | cut -d '"' -f 4 | cut -d '{' -f 1)
-echo "tag_sha: $tag_sha"
+if [ -z "$GITEA_REPO_SLUG" ]; then
+  GITEA_REPO_SLUG="$REPO_SLUG"
+fi
 
-release_url="https://api.github.com/repos/$REPO_SLUG/releases/tags/$RELEASE_NAME"
-echo "Getting the release ID..."
-echo "release_url: $release_url"
-release_infos=$(curl -XGET --header "Authorization: token ${GITHUB_TOKEN}" "${release_url}")
-echo "release_infos: $release_infos"
-release_id=$(echo "$release_infos" | grep "\"id\":" | head -n 1 | tr -s " " | cut -f 3 -d" " | cut -f 1 -d ",")
-echo "release ID: $release_id"
-upload_url=$(echo "$release_infos" | grep '"upload_url":' | head -n 1 | cut -d '"' -f 4 | cut -d '{' -f 1)
-echo "upload_url: $upload_url"
-release_url=$(echo "$release_infos" | grep '"url":' | head -n 1 | cut -d '"' -f 4 | cut -d '{' -f 1)
-echo "release_url: $release_url"
-target_commit_sha=$(echo "$release_infos" | grep '"target_commitish":' | head -n 1 | cut -d '"' -f 4 | cut -d '{' -f 1)
-echo "target_commit_sha: $target_commit_sha"
+if [ ! -z "$GITHUB_TOKEN" ]; then
+  tag_url="https://api.github.com/repos/$REPO_SLUG/git/refs/tags/$RELEASE_NAME"
+  tag_infos=$(curl -XGET --header "Authorization: token ${GITHUB_TOKEN}" "${tag_url}")
+  echo "tag_infos: $tag_infos"
+  tag_sha=$(echo "$tag_infos" | grep '"sha":' | head -n 1 | cut -d '"' -f 4 | cut -d '{' -f 1)
+  echo "tag_sha: $tag_sha"
 
-if [ "$TRAVIS_COMMIT" != "$target_commit_sha" ] ; then
+  release_url="https://api.github.com/repos/$REPO_SLUG/releases/tags/$RELEASE_NAME"
+  echo "Getting the release ID..."
+  echo "release_url: $release_url"
+  release_infos=$(curl -XGET --header "Authorization: token ${GITHUB_TOKEN}" "${release_url}")
+  echo "release_infos: $release_infos"
+  release_id=$(echo "$release_infos" | grep "\"id\":" | head -n 1 | tr -s " " | cut -f 3 -d" " | cut -f 1 -d ",")
+  echo "release ID: $release_id"
+  upload_url=$(echo "$release_infos" | grep '"upload_url":' | head -n 1 | cut -d '"' -f 4 | cut -d '{' -f 1)
+  echo "upload_url: $upload_url"
+  release_url=$(echo "$release_infos" | grep '"url":' | head -n 1 | cut -d '"' -f 4 | cut -d '{' -f 1)
+  echo "release_url: $release_url"
+  target_commit_sha=$(echo "$release_infos" | grep '"target_commitish":' | head -n 1 | cut -d '"' -f 4 | cut -d '{' -f 1)
+  echo "target_commit_sha: $target_commit_sha"
 
-  echo "TRAVIS_COMMIT != target_commit_sha, hence deleting $RELEASE_NAME..."
+  if [ "$TRAVIS_COMMIT" != "$target_commit_sha" ] ; then
+
+    echo "TRAVIS_COMMIT != target_commit_sha, hence deleting $RELEASE_NAME..."
   
-  if [ ! -z "$release_id" ]; then
-    delete_url="https://api.github.com/repos/$REPO_SLUG/releases/$release_id"
-    echo "Delete the release..."
-    echo "delete_url: $delete_url"
-    curl -XDELETE \
-        --header "Authorization: token ${GITHUB_TOKEN}" \
-        "${delete_url}"
-  fi
+    if [ ! -z "$release_id" ]; then
+      delete_url="https://api.github.com/repos/$REPO_SLUG/releases/$release_id"
+      echo "Delete the release..."
+      echo "delete_url: $delete_url"
+      curl -XDELETE \
+          --header "Authorization: token ${GITHUB_TOKEN}" \
+          "${delete_url}"
+    fi
 
-  # echo "Checking if release with the same name is still there..."
-  # echo "release_url: $release_url"
-  # curl -XGET --header "Authorization: token ${GITHUB_TOKEN}" \
-  #     "$release_url"
+    # echo "Checking if release with the same name is still there..."
+    # echo "release_url: $release_url"
+    # curl -XGET --header "Authorization: token ${GITHUB_TOKEN}" \
+    #     "$release_url"
 
-  if [ "$RELEASE_NAME" == "continuous" ] ; then
-    # if this is a continuous build tag, then delete the old tag
-    # in preparation for the new release
-    echo "Delete the tag..."
-    delete_url="https://api.github.com/repos/$REPO_SLUG/git/refs/tags/$RELEASE_NAME"
-    echo "delete_url: $delete_url"
-    curl -XDELETE \
-        --header "Authorization: token ${GITHUB_TOKEN}" \
-        "${delete_url}"
-  fi
+    if [ "$RELEASE_NAME" == "continuous" ] ; then
+      # if this is a continuous build tag, then delete the old tag
+      # in preparation for the new release
+      echo "Delete the tag..."
+      delete_url="https://api.github.com/repos/$REPO_SLUG/git/refs/tags/$RELEASE_NAME"
+      echo "delete_url: $delete_url"
+      curl -XDELETE \
+          --header "Authorization: token ${GITHUB_TOKEN}" \
+          "${delete_url}"
+    fi
 
-  echo "Create release..."
+    echo "Create release..."
 
-  if [ -z "$TRAVIS_BRANCH" ] ; then
-    TRAVIS_BRANCH="master"
-  fi
+    if [ -z "$TRAVIS_BRANCH" ] ; then
+      TRAVIS_BRANCH="master"
+    fi
 
-  if [ ! -z "$TRAVIS_JOB_ID" ] ; then
-    if [ -z "${UPLOADTOOL_BODY+x}" ] ; then
-      BODY="Travis CI build log: ${TRAVIS_BUILD_WEB_URL}"
+    if [ ! -z "$TRAVIS_JOB_ID" ] ; then
+      if [ -z "${UPLOADTOOL_BODY+x}" ] ; then
+        BODY="Travis CI build log: ${TRAVIS_BUILD_WEB_URL}"
+      else
+        BODY="$UPLOADTOOL_BODY"
+      fi
     else
       BODY="$UPLOADTOOL_BODY"
     fi
-  else
-    BODY="$UPLOADTOOL_BODY"
+
+    release_infos=$(curl -H "Authorization: token ${GITHUB_TOKEN}" \
+         --data '{"tag_name": "'"$RELEASE_NAME"'","target_commitish": "'"$TRAVIS_COMMIT"'","name": "'"$RELEASE_TITLE"'","body": "'"$BODY"'","draft": false,"prerelease": '$is_prerelease'}' "https://api.github.com/repos/$REPO_SLUG/releases")
+
+    echo "$release_infos"
+
+    unset upload_url
+    upload_url=$(echo "$release_infos" | grep '"upload_url":' | head -n 1 | cut -d '"' -f 4 | cut -d '{' -f 1)
+    echo "upload_url: $upload_url"
+
+    unset release_url
+    release_url=$(echo "$release_infos" | grep '"url":' | head -n 1 | cut -d '"' -f 4 | cut -d '{' -f 1)
+    echo "release_url: $release_url"
+
+  fi # if [ "$TRAVIS_COMMIT" != "$tag_sha" ]
+
+  if [ -z "$release_url" ] ; then
+    echo "Cannot figure out the release URL for $RELEASE_NAME"
+    exit 1
   fi
 
-  release_infos=$(curl -H "Authorization: token ${GITHUB_TOKEN}" \
-       --data '{"tag_name": "'"$RELEASE_NAME"'","target_commitish": "'"$TRAVIS_COMMIT"'","name": "'"$RELEASE_TITLE"'","body": "'"$BODY"'","draft": false,"prerelease": '$is_prerelease'}' "https://api.github.com/repos/$REPO_SLUG/releases")
+  echo "Upload binaries to the release..."
 
-  echo "$release_infos"
+  for FILE in "$@" ; do
+    FULLNAME="${FILE}"
+    BASENAME="$(basename "${FILE}")"
+    curl -H "Authorization: token ${GITHUB_TOKEN}" \
+         -H "Accept: application/vnd.github.manifold-preview" \
+         -H "Content-Type: application/octet-stream" \
+         --data-binary @$FULLNAME \
+         "$upload_url?name=$BASENAME"
+    echo ""
+  done
 
-  unset upload_url
-  upload_url=$(echo "$release_infos" | grep '"upload_url":' | head -n 1 | cut -d '"' -f 4 | cut -d '{' -f 1)
+fi # if [ -z "$GITHUB_TOKEN" ]
+
+if [ ! -z "$GITEA_SERVER_URL" ] && [ ! -z "$GITEA_SERVER_TOKEN" ]; then
+  alias gitea_curl="curl -H \"Authorization: token $GITEA_SERVER_TOKEN\""
+  REPO_SLUG=$GITEA_REPO_SLUG
+  
+  tag_url="$GITEA_SERVER_URL/api/v1/repos/$REPO_SLUG/git/refs/tags/$RELEASE_NAME"
+  tag_infos=$(gitea_curl -XGET "${tag_url}")
+  echo "tag_infos: $tag_infos"
+  tag_sha=$(echo "$tag_infos" | grep -o '"sha":.*' | head -n 1 | cut -d '"' -f 4)
+  echo "tag_sha: $tag_sha"
+  
+  releases_url="$GITEA_SERVER_URL/api/v1/repos/$REPO_SLUG/releases"
+  echo "releases_url: $releases_url"
+  
+  # check release id 
+  # (gitea api sucks)
+  release_id=$(gitea_url -XGET "$release_url" | grep -o "$RELEASE_NAME\".*" | grep -o "url.*" | cut -d '"' -f 3 | rev | cut -d '/' -f 1 | rev)
+  echo "release_id: $release_id"
+  release_url="$GITEA_SERVER_URL/api/v1/repos/$REPO_SLUG/releases/$release_id"
+  echo "release_url: $release_url"
+  release_info=$(gitea_url -XGET "$release_url")
+  echo "release_info: $release_info"
+  release_tag="$(echo $release_info | grep -o "\"tag_name\".*" | cut -d '"' -f 4)"
+  echo "release_tag: $release_tag"
+  
+  if [ "$release_tag"  != "$RELEASE_NAME" ]; then
+    echo "release_tag != RELEASE_NAME"
+    exit 1
+  fi
+
+  if [ "$TRAVIS_COMMIT" != "$tag_sha" ] ; then
+
+    echo "TRAVIS_COMMIT != tag_sha, hence deleting $RELEASE_NAME..."
+  
+    if [ ! -z "$release_id" ]; then
+      echo "Delete the release..."
+      echo "delete_url: $release_url"
+      curl -XDELETE \
+          --header "Authorization: token ${GITHUB_TOKEN}" \
+          "$release_url"
+    fi
+
+    if [ "$RELEASE_NAME" == "continuous" ] ; then
+      # if this is a continuous build tag, then delete the old tag
+      # in preparation for the new release
+      
+      # GITEA API SUUUUUCKS!!!!111
+      echo "Delete the tag..."
+      scheme=$(echo $GITEA_SERVER_URL | cut -d / -f 1)
+      server_url=$(echo $GITEA_SERVER_URL | cut -d / -f 3)
+      git remote add origin2 "$scheme//FWGS-deployer:$GITEA_SERVER_TOKEN@$server_url/$REPO_SLUG"
+      git push origin2 --delete $RELEASE_NAME
+    fi
+    
+    echo "Create release..."
+
+    if [ -z "$TRAVIS_BRANCH" ] ; then
+      TRAVIS_BRANCH="master"
+    fi
+
+    if [ ! -z "$TRAVIS_JOB_ID" ] ; then
+      if [ -z "${UPLOADTOOL_BODY+x}" ] ; then
+        BODY="Travis CI build log: ${TRAVIS_BUILD_WEB_URL}"
+      else
+        BODY="$UPLOADTOOL_BODY"
+      fi
+    else
+      BODY="$UPLOADTOOL_BODY"
+    fi
+
+    release_infos=$(gitea_curl -XPOST \
+         --data '{"tag_name": "'"$RELEASE_NAME"'","target_commitish": "'"$TRAVIS_COMMIT"'","name": "'"$RELEASE_TITLE"'","body": "'"$BODY"'","draft": false,"prerelease": '$is_prerelease'}' "$GITEA_SERVER_URL/api/v1/repos/$REPO_SLUG/releases")
+
+    echo "$release_infos"
+
+    unset release_id
+    release_id=$(echo "$release_infos" | grep -o '"id".*' | cut -d: -f 2 | cut -d, -f 1)
+    echo "release_id: $release_id"
+  fi
+  
+  if [ -z "$release_id" ] ; then
+    echo "Cannot figure out the release ID for $RELEASE_NAME"
+    exit 1
+  fi
+  
+  upload_url="$GITEA_SERVER_URL/api/v1/repos/$REPO_SLUG/releases/$release_id/assets"
   echo "upload_url: $upload_url"
 
-  unset release_url
-  release_url=$(echo "$release_infos" | grep '"url":' | head -n 1 | cut -d '"' -f 4 | cut -d '{' -f 1)
-  echo "release_url: $release_url"
+  echo "Upload binaries to the release..."
 
-fi # if [ "$TRAVIS_COMMIT" != "$tag_sha" ]
+  for FILE in "$@" ; do
+    FULLNAME="${FILE}"
+    BASENAME="$(basename "${FILE}")"
+    gitea_curl -XPOST "$upload_url" \
+      -F "name=$BASENAME" \
+      -F "attachment=@$FULLNAME"
+    echo "uploaded $FILENAME"
+  done
 
-if [ -z "$release_url" ] ; then
-	echo "Cannot figure out the release URL for $RELEASE_NAME"
-	exit 1
 fi
 
-echo "Upload binaries to the release..."
-
-for FILE in "$@" ; do
-  FULLNAME="${FILE}"
-  BASENAME="$(basename "${FILE}")"
-  curl -H "Authorization: token ${GITHUB_TOKEN}" \
-       -H "Accept: application/vnd.github.manifold-preview" \
-       -H "Content-Type: application/octet-stream" \
-       --data-binary @$FULLNAME \
-       "$upload_url?name=$BASENAME"
-  echo ""
-done
 
 $shatool "$@"
 
