@@ -277,28 +277,33 @@ if [ ! -z "$GITHUB_TOKEN" ]; then
     echo ""
   done
 
+  if [ "$TRAVIS_COMMIT" != "$tag_sha" ] ; then
+    echo "Publish the release..."
+
+    release_infos=$(curl -H "Authorization: token ${GITHUB_TOKEN}" \
+       --data '{"draft": false}' "$release_url")
+
+    echo "$release_infos"
+  fi # if [ "$TRAVIS_COMMIT" != "$tag_sha" ]
 fi # if [ -z "$GITHUB_TOKEN" ]
 
 if [ ! -z "$GITEA_SERVER_URL" ] && [ ! -z "$GITEA_SERVER_TOKEN" ]; then
-  alias gitea_curl="curl -H \"Authorization: token $GITEA_SERVER_TOKEN\""
-  REPO_SLUG=$GITEA_REPO_SLUG
-  
-  tag_url="$GITEA_SERVER_URL/api/v1/repos/$REPO_SLUG/git/refs/tags/$RELEASE_NAME"
-  tag_infos=$(gitea_curl -XGET "${tag_url}")
+  tag_url="$GITEA_SERVER_URL/api/v1/repos/$GITEA_REPO_SLUG/git/refs/tags/$RELEASE_NAME"
+  tag_infos=$(curl -H "Authorization: token $GITEA_SERVER_TOKEN" -XGET "${tag_url}")
   echo "tag_infos: $tag_infos"
   tag_sha=$(echo "$tag_infos" | grep -o '"sha":.*' | head -n 1 | cut -d '"' -f 4)
   echo "tag_sha: $tag_sha"
   
-  releases_url="$GITEA_SERVER_URL/api/v1/repos/$REPO_SLUG/releases"
+  releases_url="$GITEA_SERVER_URL/api/v1/repos/$GITEA_REPO_SLUG/releases"
   echo "releases_url: $releases_url"
   
   # check release id 
   # (gitea api sucks)
-  release_id=$(gitea_url -XGET "$release_url" | grep -o "$RELEASE_NAME\".*" | grep -o "url.*" | cut -d '"' -f 3 | rev | cut -d '/' -f 1 | rev)
+  release_id=$(curl -H "Authorization: token $GITEA_SERVER_TOKEN" -XGET "$release_url" | grep -o "$RELEASE_NAME\".*" | grep -o "url.*" | cut -d '"' -f 3 | rev | cut -d '/' -f 1 | rev)
   echo "release_id: $release_id"
-  release_url="$GITEA_SERVER_URL/api/v1/repos/$REPO_SLUG/releases/$release_id"
+  release_url="$GITEA_SERVER_URL/api/v1/repos/$GITEA_REPO_SLUG/releases/$release_id"
   echo "release_url: $release_url"
-  release_info=$(gitea_url -XGET "$release_url")
+  release_info=$(curl -H "Authorization: token $GITEA_SERVER_TOKEN" -XGET "$release_url")
   echo "release_info: $release_info"
   release_tag="$(echo $release_info | grep -o "\"tag_name\".*" | cut -d '"' -f 4)"
   echo "release_tag: $release_tag"
@@ -315,9 +320,7 @@ if [ ! -z "$GITEA_SERVER_URL" ] && [ ! -z "$GITEA_SERVER_TOKEN" ]; then
     if [ ! -z "$release_id" ]; then
       echo "Delete the release..."
       echo "delete_url: $release_url"
-      curl -XDELETE \
-          --header "Authorization: token ${GITHUB_TOKEN}" \
-          "$release_url"
+      curl -H "Authorization: token $GITEA_SERVER_TOKEN" -XDELETE "$release_url"
     fi
 
     if [ "$RELEASE_NAME" == "continuous" ] ; then
@@ -328,7 +331,7 @@ if [ ! -z "$GITEA_SERVER_URL" ] && [ ! -z "$GITEA_SERVER_TOKEN" ]; then
       echo "Delete the tag..."
       scheme=$(echo $GITEA_SERVER_URL | cut -d / -f 1)
       server_url=$(echo $GITEA_SERVER_URL | cut -d / -f 3)
-      git remote add origin2 "$scheme//FWGS-deployer:$GITEA_SERVER_TOKEN@$server_url/$REPO_SLUG"
+      git remote add origin2 "$scheme//FWGS-deployer:$GITEA_SERVER_TOKEN@$server_url/$GITEA_REPO_SLUG"
       git push origin2 --delete $RELEASE_NAME
     fi
     
@@ -348,8 +351,8 @@ if [ ! -z "$GITEA_SERVER_URL" ] && [ ! -z "$GITEA_SERVER_TOKEN" ]; then
       BODY="$UPLOADTOOL_BODY"
     fi
 
-    release_infos=$(gitea_curl -XPOST \
-         --data '{"tag_name": "'"$RELEASE_NAME"'","target_commitish": "'"$TRAVIS_COMMIT"'","name": "'"$RELEASE_TITLE"'","body": "'"$BODY"'","draft": false,"prerelease": '$is_prerelease'}' "$GITEA_SERVER_URL/api/v1/repos/$REPO_SLUG/releases")
+    release_infos=$(curl -H "Authorization: token $GITEA_SERVER_TOKEN" -XPOST \
+         --data '{"tag_name": "'"$RELEASE_NAME"'","target_commitish": "'"$TRAVIS_COMMIT"'","name": "'"$RELEASE_TITLE"'","body": "'"$BODY"'","draft": false,"prerelease": '$is_prerelease'}' "$GITEA_SERVER_URL/api/v1/repos/$GITEA_REPO_SLUG/releases")
 
     echo "$release_infos"
 
@@ -363,7 +366,7 @@ if [ ! -z "$GITEA_SERVER_URL" ] && [ ! -z "$GITEA_SERVER_TOKEN" ]; then
     exit 1
   fi
   
-  upload_url="$GITEA_SERVER_URL/api/v1/repos/$REPO_SLUG/releases/$release_id/assets"
+  upload_url="$GITEA_SERVER_URL/api/v1/repos/$GITEA_REPO_SLUG/releases/$release_id/assets"
   echo "upload_url: $upload_url"
 
   echo "Upload binaries to the release..."
@@ -371,7 +374,7 @@ if [ ! -z "$GITEA_SERVER_URL" ] && [ ! -z "$GITEA_SERVER_TOKEN" ]; then
   for FILE in "$@" ; do
     FULLNAME="${FILE}"
     BASENAME="$(basename "${FILE}")"
-    gitea_curl -XPOST "$upload_url" \
+    curl -H "Authorization: token $GITEA_SERVER_TOKEN" -XPOST "$upload_url" \
       -F "name=$BASENAME" \
       -F "attachment=@$FULLNAME"
     echo "uploaded $FILENAME"
@@ -381,12 +384,3 @@ fi
 
 
 $shatool "$@"
-
-if [ "$TRAVIS_COMMIT" != "$tag_sha" ] ; then
-  echo "Publish the release..."
-
-  release_infos=$(curl -H "Authorization: token ${GITHUB_TOKEN}" \
-       --data '{"draft": false}' "$release_url")
-
-  echo "$release_infos"
-fi # if [ "$TRAVIS_COMMIT" != "$tag_sha" ]
