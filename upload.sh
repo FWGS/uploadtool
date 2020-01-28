@@ -308,15 +308,14 @@ if [ ! -z "$GITEA_SERVER_URL" ] && [ ! -z "$GITEA_SERVER_TOKEN" ]; then
   release_tag="$(echo $release_info | grep -o "\"tag_name\".*" | cut -d '"' -f 4)"
   echo "release_tag: $release_tag"
   
-  if [ "$release_tag"  != "$RELEASE_NAME" ]; then
+  if [ -z "$release_tag" ] && [ "$release_tag"  != "$RELEASE_NAME" ]; then
     echo "release_tag != RELEASE_NAME"
     exit 1
   fi
 
-  if [ "$TRAVIS_COMMIT" != "$tag_sha" ] ; then
+  # if release id is empty OR release tag is outdated, create new release
+  if [ "$TRAVIS_COMMIT" != "$tag_sha" ] || [ -z "$release_id" ] ; then
 
-    echo "TRAVIS_COMMIT != tag_sha, hence deleting $RELEASE_NAME..."
-  
     if [ ! -z "$release_id" ]; then
       echo "Delete the release..."
       echo "delete_url: $release_url"
