@@ -2,27 +2,31 @@
 
 set +x # Do not leak information
 
-# Exit immediately if one of the files given as arguments is not there
-# because we don't want to delete the existing release if we don't have
-# the new files that should be uploaded 
-for file in "$@"
-do
-    if [ ! -e "$file" ]
-    then echo "$file is missing, giving up." >&2; exit 1
-    fi
-done
-
-if [ $# -eq 0 ]; then
-    echo "No artifacts to use for release, giving up."
-    exit 0
-fi
-
 if command -v sha256sum >/dev/null 2>&1 ; then
   shatool="sha256sum"
 elif command -v shasum >/dev/null 2>&1 ; then
   shatool="shasum -a 256" # macOS fallback
 else
+  shatool="true"
   echo "Neither sha256sum nor shasum is available, cannot check hashes"
+fi
+
+# Exit immediately if one of the files given as arguments is not there
+# because we don't want to delete the existing release if we don't have
+# the new files that should be uploaded 
+for file in "$@"
+do
+    if [ ! -e "$file" ]; then
+        echo "$file is missing, giving up." >&2
+        exit 1
+    fi
+    # calculate SHA256 sum for each file
+    $shatool $file > $file.sha256sum
+done
+
+if [ $# -eq 0 ]; then
+    echo "No artifacts to use for release, giving up."
+    exit 0
 fi
 
 # The calling script (usually .travis.yml) can set a suffix to be used for
@@ -274,6 +278,11 @@ if [ ! -z "$GITHUB_TOKEN" ]; then
          -H "Content-Type: application/octet-stream" \
          --data-binary @$FULLNAME \
          "$upload_url?name=$BASENAME"
+    curl -H "Authorization: token ${GITHUB_TOKEN}" \
+         -H "Accept: application/vnd.github.manifold-preview" \
+         -H "Content-Type: application/octet-stream" \
+         --data-binary @$FULLNAME.sha256sum \
+         "$upload_url?name=$BASENAME.sha256sum"
     echo ""
   done
 
