@@ -296,7 +296,8 @@ if [ ! -z "$GITHUB_TOKEN" ]; then
   fi # if [ "$TRAVIS_COMMIT" != "$tag_sha" ]
 fi # if [ -z "$GITHUB_TOKEN" ]
 
-if [ ! -z "$GITEA_SERVER_URL" ] && [ ! -z "$GITEA_SERVER_TOKEN" ]; then
+# a1ba: disable Gitea publishing, it's not done correctly yet
+if [ o -eq 1 ] && [ ! -z "$GITEA_SERVER_URL" ] && [ ! -z "$GITEA_SERVER_TOKEN" ]; then
   tag_url="$GITEA_SERVER_URL/api/v1/repos/$GITEA_REPO_SLUG/git/refs/tags/$RELEASE_NAME"
   tag_infos=$(curl -H "Authorization: token $GITEA_SERVER_TOKEN" -XGET "${tag_url}")
   echo "tag_infos: $tag_infos"
